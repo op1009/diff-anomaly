@@ -1,0 +1,5 @@
+# exclude pycache
+**/__pycache__/
+
+# exclude results dir
+results/
