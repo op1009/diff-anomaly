@@ -4,6 +4,7 @@ Train a diffusion model on images.
 import sys
 import argparse
 import torch as th
+from datetime import datetime
 sys.path.append("..")
 sys.path.append(".")
 from guided_diffusion.bratsloader import BRATSDataset
@@ -24,7 +25,17 @@ def main():
     args = create_argparser().parse_args()
 
     dist_util.setup_dist()
-    logger.configure()
+
+    # set current date and time as dir name for logs
+    now = datetime.now()
+    date_time_str = now.strftime("%Y-%m-%d_%H-%M-%S")
+
+    logger.configure(dir=f'./results/IMG_{date_time_str}')
+
+    logger.log("Parsed arguments:")
+    for arg, value in vars(args).items():
+        logger.log(f"{arg}: {value}")
+    logger.log("-----"*10)
 
     logger.log("creating model and diffusion...")
     model, diffusion = create_model_and_diffusion(
@@ -84,8 +95,8 @@ def create_argparser():
         microbatch=-1,  # -1 disables microbatches
         ema_rate="0.9999",  # comma-separated list of EMA values
         log_interval=100,
-        save_interval=10000,
-        resume_checkpoint='',
+        save_interval=5000,
+        resume_checkpoint='../../dslr/diffusion-anomaly/img_results/brats2update450000.pt',
         use_fp16=False,
         fp16_scale_growth=1e-3,
         dataset='brats',

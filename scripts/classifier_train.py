@@ -4,6 +4,7 @@ Train a noised image classifier on ImageNet.
 
 import argparse
 import os
+from datetime import datetime
 import sys
 from torch.autograd import Variable
 sys.path.append("..")
@@ -43,7 +44,17 @@ def main():
     args = create_argparser().parse_args()
 
     dist_util.setup_dist()
-    logger.configure()
+
+    # set current date and time as dir name for logs
+    now = datetime.now()
+    date_time_str = now.strftime("%Y-%m-%d_%H-%M-%S")
+
+    logger.configure(dir=f'./results/CLF_{date_time_str}')
+
+    logger.log("Parsed arguments:")
+    for arg, value in vars(args).items():
+        logger.log(f"{arg}: {value}")
+    logger.log("-----"*10)
 
     logger.log("creating model and diffusion...")
     model, diffusion = create_classifier_and_diffusion(
@@ -260,8 +271,8 @@ def create_argparser():
         schedule_sampler="uniform",
         resume_checkpoint="",
         log_interval=1,
-        eval_interval=1000,
-        save_interval=5000,
+        eval_interval=500,
+        save_interval=1000,
         dataset='brats'
     )
     defaults.update(classifier_and_diffusion_defaults())

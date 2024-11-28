@@ -23,7 +23,7 @@ SAMPLE_FLAGS="--batch_size 1 --num_samples 1 --timestep_respacing ddim1000 --use
 ```
 To train the classification model, run
 ```
-python scripts/classifier_train.py --data_dir path_to_traindata --dataset brats_or_chexpert $TRAIN_FLAGS $CLASSIFIER_FLAGS
+python scripts/classifier_train.py --data_dir path_to_traindata --val_data_dir path_to_validation --dataset brats_or_chexpert $TRAIN_FLAGS $CLASSIFIER_FLAGS
 ```
 To train the diffusion model, run
 ```
