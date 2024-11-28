@@ -297,7 +297,7 @@ def parse_resume_step_from_filename(filename):
         return 0
     split1 = split[-1].split(".")[0]
     try:
-        return int(split1)
+        return int(split1[-6:])
     except ValueError:
         return 0
 

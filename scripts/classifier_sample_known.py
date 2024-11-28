@@ -5,6 +5,7 @@ numpy array. This can be used to produce samples for FID evaluation.
 import matplotlib.pyplot as plt
 import argparse
 import os
+from datetime import datetime
 from visdom import Visdom
 viz = Visdom(port=8850)
 import sys
@@ -36,7 +37,17 @@ def main():
     args = create_argparser().parse_args()
 
     dist_util.setup_dist()
-    logger.configure()
+
+    # set current date and time as dir name for logs
+    now = datetime.now()
+    date_time_str = now.strftime("%Y-%m-%d_%H-%M-%S")
+
+    logger.configure(dir=f'./results/IMG_{date_time_str}')
+
+    logger.log("Parsed arguments:")
+    for arg, value in vars(args).items():
+        logger.log(f"{arg}: {value}")
+    logger.log("-----"*10)
 
     logger.log("creating model and diffusion...")
     model, diffusion = create_model_and_diffusion(

@@ -3,3 +3,9 @@
 
 # exclude results dir
 results/
+
+# exclude venv
+diffenv/
+
+# exclude dataset
+brats20/

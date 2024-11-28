@@ -112,7 +112,7 @@ def main():
     opt = AdamW(mp_trainer.master_params, lr=args.lr, weight_decay=args.weight_decay)
     if args.resume_checkpoint:
         opt_checkpoint = bf.join(
-            bf.dirname(args.resume_checkpoint), f"opt{resume_step:06}.pt"
+            bf.dirname(args.resume_checkpoint), f"optbratsclass{resume_step:06}.pt"
         )
         logger.log(f"loading optimizer state from checkpoint: {opt_checkpoint}")
         opt.load_state_dict(
