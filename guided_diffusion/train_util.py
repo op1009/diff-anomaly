@@ -25,25 +25,26 @@ def visualize(img):
 
 class TrainLoop:
     def __init__(
-        self,
-        *,
-        model,
-        diffusion,
-        data,
-        batch_size,
-        microbatch,
-        lr,
-        ema_rate,
-        log_interval,
-        save_interval,
-        resume_checkpoint,
-        use_fp16=False,
-        fp16_scale_growth=1e-3,
-        schedule_sampler=None,
-        weight_decay=0.0,
-        lr_anneal_steps=0,
-        dataset='brats',
-    ):
+            self,
+            *,
+            model,
+            diffusion,
+            data,
+            batch_size,
+            microbatch,
+            lr,
+            ema_rate,
+            log_interval,
+            save_interval,
+            resume_checkpoint,
+            use_fp16=False,
+            fp16_scale_growth=1e-3,
+            schedule_sampler=None,
+            weight_decay=0.0,
+            lr_anneal_steps=0,
+            dataset='brats',
+        ):
+        
         self.model = model
         self.diffusion = diffusion
         self.datal = data
@@ -53,10 +54,10 @@ class TrainLoop:
         self.microbatch = microbatch if microbatch > 0 else batch_size
         self.lr = lr
         self.ema_rate = (
-            [ema_rate]
-            if isinstance(ema_rate, float)
-            else [float(x) for x in ema_rate.split(",")]
-        )
+                        [ema_rate]
+                        if isinstance(ema_rate, float)
+                        else [float(x) for x in ema_rate.split(",")]
+                    )
         self.log_interval = log_interval
         self.save_interval = save_interval
         self.resume_checkpoint = resume_checkpoint
@@ -74,14 +75,14 @@ class TrainLoop:
 
         self._load_and_sync_parameters()
         self.mp_trainer = MixedPrecisionTrainer(
-            model=self.model,
-            use_fp16=self.use_fp16,
-            fp16_scale_growth=fp16_scale_growth,
-        )
+                                            model=self.model,
+                                            use_fp16=self.use_fp16,
+                                            fp16_scale_growth=fp16_scale_growth,
+                                        )
 
         self.opt = AdamW(
-            self.mp_trainer.master_params, lr=self.lr, weight_decay=self.weight_decay
-        )
+                    self.mp_trainer.master_params, lr=self.lr, weight_decay=self.weight_decay
+                    )
         if self.resume_step:
             self._load_optimizer_state()
             # Model was resumed, either due to a restart or a checkpoint
@@ -204,20 +205,20 @@ class TrainLoop:
             micro = batch[i : i + self.microbatch].to(dist_util.dev())
             print('micro', micro.shape)
             micro_cond = {
-                k: v[i : i + self.microbatch].to(dist_util.dev())
-                for k, v in cond.items()
-            }
+                            k: v[i : i + self.microbatch].to(dist_util.dev())
+                            for k, v in cond.items()
+                        }
        
             last_batch = (i + self.microbatch) >= batch.shape[0]
             t, weights = self.schedule_sampler.sample(micro.shape[0], dist_util.dev())
 
             compute_losses = functools.partial(
-                self.diffusion.training_losses,
-                self.ddp_model,
-                micro,
-                t,
-                model_kwargs=micro_cond,
-            )
+                                            self.diffusion.training_losses,
+                                            self.ddp_model,
+                                            micro,
+                                            t,
+                                            model_kwargs=micro_cond,
+                                        )
 
             if last_batch or not self.use_ddp:
                 losses1 = compute_losses()
@@ -238,8 +239,8 @@ class TrainLoop:
             lossmse = (losses["mse"] * weights).mean().detach()
            
             log_loss_dict(
-                self.diffusion, t, {k: v * weights for k, v in losses.items()}
-            )
+                        self.diffusion, t, {k: v * weights for k, v in losses.items()}
+                    )
             self.mp_trainer.backward(loss)
 
             return lossmse.detach(),  sample
@@ -331,3 +332,24 @@ def log_loss_dict(diffusion, ts, losses):
         for sub_t, sub_loss in zip(ts.cpu().numpy(), values.detach().cpu().numpy()):
             quartile = int(4 * sub_t / diffusion.num_timesteps)
             logger.logkv_mean(f"{key}_q{quartile}", sub_loss)
+
+def get_device_details():
+    """Get the computing device(CPU/GPU) details and log it."""
+    # Check if CUDA is available
+    if th.cuda.is_available():
+        device = th.device("cuda")
+        logger.log("CUDA device")
+        # Get the current device index
+        current_device = th.cuda.current_device()
+        
+        # Get the name of the current device
+        device_name = th.cuda.get_device_name(current_device)
+        
+        logger.log(f"Device Index: {current_device}")
+        logger.log(f"Device Name: {device_name}")
+    else:
+        # If CUDA is not available, use CPU
+        device = th.device("cpu")
+    
+    # Print the device being used
+    logger.log(f"Current Device: {device}")

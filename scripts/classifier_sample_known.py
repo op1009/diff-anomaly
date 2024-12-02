@@ -27,7 +27,10 @@ from guided_diffusion.script_util import (
     add_dict_to_argparser,
     args_to_dict,
 )
+from guided_diffusion.train_util import get_device_details
+
 def visualize(img):
+    """Returns min-max normalized image."""
     _min = img.min()
     _max = img.max()
     normalized_img = (img - _min)/ (_max - _min)
@@ -42,37 +45,46 @@ def main():
     now = datetime.now()
     date_time_str = now.strftime("%Y-%m-%d_%H-%M-%S")
 
-    logger.configure(dir=f'./results/IMG_{date_time_str}')
+    logger.configure(dir=f'./results/SAMPLE_{date_time_str}')
+
+    get_device_details()
 
     logger.log("Parsed arguments:")
     for arg, value in vars(args).items():
         logger.log(f"{arg}: {value}")
     logger.log("-----"*10)
 
+    logger.log("loading dataset...")
+    if args.dataset=='brats':
+        ds = BRATSDataset(args.data_dir, test_flag=True)
+        datal = th.utils.data.DataLoader(
+                                        ds,
+                                        batch_size=args.batch_size,
+                                        shuffle=False
+                                        )
+        logger.log(f"found {len(ds)} test samples of brats")
+
+    elif args.dataset=='chexpert':
+        data = load_data(
+                        data_dir=args.data_dir,
+                        batch_size=args.batch_size,
+                        image_size=args.image_size,
+                        class_cond=True,
+                        )
+        datal = iter(data)
+   
+
     logger.log("creating model and diffusion...")
     model, diffusion = create_model_and_diffusion(
-        **args_to_dict(args, model_and_diffusion_defaults().keys())
-    )
-    if args.dataset=='brats':
-      ds = BRATSDataset(args.data_dir, test_flag=True)
-      datal = th.utils.data.DataLoader(
-        ds,
-        batch_size=args.batch_size,
-        shuffle=False)
+                                                **args_to_dict(args, model_and_diffusion_defaults().keys())
+                                                    )
     
-    elif args.dataset=='chexpert':
-     data = load_data(
-         data_dir=args.data_dir,
-         batch_size=args.batch_size,
-         image_size=args.image_size,
-         class_cond=True,
-     )
-     datal = iter(data)
-   
     model.load_state_dict(
-        dist_util.load_state_dict(args.model_path, map_location="cpu")
-    )
+                        dist_util.load_state_dict(args.model_path,map_location="cpu")
+                        )
     model.to(dist_util.dev())
+    print("loaded model")
+
     if args.use_fp16:
         model.convert_to_fp16()
     model.eval()
@@ -80,19 +92,19 @@ def main():
     logger.log("loading classifier...")
     classifier = create_classifier(**args_to_dict(args, classifier_defaults().keys()))
     classifier.load_state_dict(
-        dist_util.load_state_dict(args.classifier_path)
-    )
-
-    print('loaded classifier')
-    p1 = np.array([np.array(p.shape).prod() for p in model.parameters()]).sum()
-    p2 = np.array([np.array(p.shape).prod() for p in classifier.parameters()]).sum()
-    print('pmodel', p1, 'pclass', p2)
-
-
+                                dist_util.load_state_dict(args.classifier_path)
+                                )
     classifier.to(dist_util.dev())
+    print('loaded classifier')
+
     if args.classifier_use_fp16:
         classifier.convert_to_fp16()
     classifier.eval()
+
+    p1 = np.array([np.array(p.shape).prod() for p in model.parameters()]).sum()
+    p2 = np.array([np.array(p.shape).prod() for p in classifier.parameters()]).sum()
+    logger.log(f"model parameters: {p1}")
+    logger.log(f"classifier parameters: {p2}")
 
 
     def cond_fn(x, t,  y=None):
@@ -104,8 +116,6 @@ def main():
             selected = log_probs[range(len(logits)), y.view(-1)]
             a=th.autograd.grad(selected.sum(), x_in)[0]
             return  a, a * args.classifier_scale
-
-
 
     def model_fn(x, t, y=None):
         assert y is not None
@@ -139,32 +149,37 @@ def main():
 
         if args.class_cond:
             classes = th.randint(
-                low=0, high=1, size=(args.batch_size,), device=dist_util.dev()
-            )
+                                low=0, 
+                                high=1, 
+                                size=(args.batch_size,), 
+                                device=dist_util.dev()
+                                )
             model_kwargs["y"] = classes
             print('y', model_kwargs["y"])
         sample_fn = (
-            diffusion.p_sample_loop_known if not args.use_ddim else diffusion.ddim_sample_loop_known
-        )
-        print('samplefn', sample_fn)
+                    diffusion.p_sample_loop_known if not args.use_ddim else diffusion.ddim_sample_loop_known
+                    )
+        print('sample fn = ', sample_fn)
+
         start = th.cuda.Event(enable_timing=True)
         end = th.cuda.Event(enable_timing=True)
         start.record()
         sample, x_noisy, org = sample_fn(
-            model_fn,
-            (args.batch_size, 4, args.image_size, args.image_size), img, org=img,
-            clip_denoised=args.clip_denoised,
-            model_kwargs=model_kwargs,
-            cond_fn=cond_fn,
-            device=dist_util.dev(),
-            noise_level=args.noise_level
-        )
+                                        model_fn,
+                                        (args.batch_size, 4, args.image_size, args.image_size),
+                                        img, 
+                                        org=img,
+                                        clip_denoised=args.clip_denoised,
+                                        model_kwargs=model_kwargs,
+                                        cond_fn=cond_fn,
+                                        device=dist_util.dev(),
+                                        noise_level=args.noise_level
+                                    )
         end.record()
         th.cuda.synchronize()
         th.cuda.current_stream().synchronize()
 
-
-        print('time for 1000', start.elapsed_time(end))
+        print('time for 1000 steps:', start.elapsed_time(end))
 
         if args.dataset=='brats':
           viz.image(visualize(sample[0,0, ...]), opts=dict(caption="sampled output0"))
@@ -205,17 +220,17 @@ def main():
 
 def create_argparser():
     defaults = dict(
-        data_dir="",
-        clip_denoised=True,
-        num_samples=10,
-        batch_size=1,
-        use_ddim=False,
-        model_path="",
-        classifier_path="",
-        classifier_scale=100,
-        noise_level=500,
-        dataset='brats'
-    )
+                    data_dir="",
+                    clip_denoised=True,
+                    num_samples=10,
+                    batch_size=1,
+                    use_ddim=False,
+                    model_path="",
+                    classifier_path="",
+                    classifier_scale=100,
+                    noise_level=500,
+                    dataset='brats'
+                )
     defaults.update(model_and_diffusion_defaults())
     defaults.update(classifier_defaults())
     parser = argparse.ArgumentParser()

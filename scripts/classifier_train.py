@@ -36,8 +36,7 @@ from guided_diffusion.script_util import (
     classifier_and_diffusion_defaults,
     create_classifier_and_diffusion,
 )
-from guided_diffusion.train_util import parse_resume_step_from_filename, log_loss_dict
-
+from guided_diffusion.train_util import parse_resume_step_from_filename, log_loss_dict, get_device_details
 
 
 def main():
@@ -50,6 +49,8 @@ def main():
     date_time_str = now.strftime("%Y-%m-%d_%H-%M-%S")
 
     logger.configure(dir=f'./results/CLF_{date_time_str}')
+
+    get_device_details()
 
     logger.log("Parsed arguments:")
     for arg, value in vars(args).items():
@@ -86,7 +87,6 @@ def main():
         model=model, use_fp16=args.classifier_use_fp16, initial_lg_loss_scale=16.0
     )
 
-
     logger.log("creating data loader...")
 
     if args.dataset == 'brats':
@@ -96,6 +96,7 @@ def main():
             batch_size=args.batch_size,
             shuffle=True)
         data = iter(datal)
+        logger.log("dataset: brats")
 
     elif args.dataset == 'chexpert':
         data = load_data(
@@ -104,9 +105,7 @@ def main():
             image_size=args.image_size,
             class_cond=True,
         )
-        print('dataset is chexpert')
-
-
+        logger.log("dataset: chexpert")
 
     logger.log(f"creating optimizer...")
     opt = AdamW(mp_trainer.master_params, lr=args.lr, weight_decay=args.weight_decay)
@@ -167,7 +166,6 @@ def main():
                      update='append')
 
             else:
-
                 output_idx = logits[0].argmax()
                 print('outputidx', output_idx)
                 output_max = logits[0, output_idx]
@@ -192,9 +190,9 @@ def main():
     for step in range(args.iterations - resume_step):
         logger.logkv("step", step + resume_step)
         logger.logkv(
-            "samples",
-            (step + resume_step + 1) * args.batch_size * dist.get_world_size(),
-        )
+                    "samples",
+                    (step + resume_step + 1) * args.batch_size * dist.get_world_size(),
+                )
         if args.anneal_lr:
             set_annealed_lr(opt, args.lr, (step + resume_step) / args.iterations)
         print('step', step + resume_step)
