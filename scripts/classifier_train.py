@@ -185,43 +185,48 @@ def main():
                 mp_trainer.backward(loss * len(sub_batch) / len(batch))
 
         return losses
+    
+    try:
+        correct=0; total=0
+        for step in range(args.iterations - resume_step):
+            logger.logkv("step", step + resume_step)
+            logger.logkv(
+                        "samples",
+                        (step + resume_step + 1) * args.batch_size * dist.get_world_size(),
+                    )
+            if args.anneal_lr:
+                set_annealed_lr(opt, args.lr, (step + resume_step) / args.iterations)
+            print('step', step + resume_step)
+            try:
+                losses = forward_backward_log(data, step + resume_step)
+            except:
+                data = iter(datal)
+                losses = forward_backward_log(data, step + resume_step)
 
-    correct=0; total=0
-    for step in range(args.iterations - resume_step):
-        logger.logkv("step", step + resume_step)
-        logger.logkv(
-                    "samples",
-                    (step + resume_step + 1) * args.batch_size * dist.get_world_size(),
-                )
-        if args.anneal_lr:
-            set_annealed_lr(opt, args.lr, (step + resume_step) / args.iterations)
-        print('step', step + resume_step)
-        try:
-            losses = forward_backward_log(data, step + resume_step)
-        except:
-            data = iter(datal)
-            losses = forward_backward_log(data, step + resume_step)
+            correct+=losses["train_acc@1"].sum()
+            total+=args.batch_size
+            acctrain=correct/total
 
-        correct+=losses["train_acc@1"].sum()
-        total+=args.batch_size
-        acctrain=correct/total
+            mp_trainer.optimize(opt)
+            
+            if not step % args.log_interval:
+                logger.dumpkvs()
+            if (
+                step
+                and dist.get_rank() == 0
+                and not (step + resume_step) % args.save_interval
+            ):
+                logger.log("saving model...")
+                save_model(mp_trainer, opt, step + resume_step)
 
-        mp_trainer.optimize(opt)
-          
-        if not step % args.log_interval:
-            logger.dumpkvs()
-        if (
-            step
-            and dist.get_rank() == 0
-            and not (step + resume_step) % args.save_interval
-        ):
+        if dist.get_rank() == 0:
             logger.log("saving model...")
             save_model(mp_trainer, opt, step + resume_step)
-
-    if dist.get_rank() == 0:
-        logger.log("saving model...")
+        dist.barrier()
+    except KeyboardInterrupt:
+        logger.log("Training interrupted. Saving model checkpoint...")
         save_model(mp_trainer, opt, step + resume_step)
-    dist.barrier()
+        logger.log(f"Checkpoint saved at step {step + resume_step}. Exiting...")
 
 
 def set_annealed_lr(opt, base_lr, frac_done):
